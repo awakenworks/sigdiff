@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod diff;
 pub mod git;
 pub mod provider;
