@@ -2,6 +2,7 @@ pub mod diff;
 pub mod git;
 pub mod provider;
 pub mod refs;
+pub mod render;
 pub mod signature;
 
 pub use diff::{FileDiff, SignatureChange, diff_file_signatures, diff_signatures};
