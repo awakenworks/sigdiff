@@ -47,6 +47,7 @@ sigdiff-lang-ts = { workspace = true, optional = true }
 sigdiff-lang-go = { workspace = true, optional = true }
 sigdiff-lang-java = { workspace = true, optional = true }
 clap = { version = "4", features = ["derive"] }
+anyhow = "1"
 
 [features]
 default = ["lang-rust", "lang-python", "lang-ts", "lang-go", "lang-java"]
