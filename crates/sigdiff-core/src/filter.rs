@@ -68,18 +68,23 @@ impl MapFilter {
             return false;
         }
 
-        // Kind filter
+        // Kind filter (struct and class are treated as equivalent)
         if let Some(kinds) = &self.kinds {
-            if !kinds.contains(&s.kind) {
+            let matches = kinds.iter().any(|k| {
+                *k == s.kind
+                    || (*k == SignatureKind::Struct && s.kind == SignatureKind::Class)
+                    || (*k == SignatureKind::Class && s.kind == SignatureKind::Struct)
+            });
+            if !matches {
                 return false;
             }
         }
 
         // Grep filter
-        if let Some(pattern) = &self.grep {
-            if !s.name.to_lowercase().contains(&pattern.to_lowercase()) {
-                return false;
-            }
+        if let Some(ref pattern) = self.grep
+            && !s.name.to_lowercase().contains(&pattern.to_lowercase())
+        {
+            return false;
         }
 
         true

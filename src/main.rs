@@ -170,38 +170,37 @@ fn scan_files(
     Ok((all_file_sigs, all_signatures, all_references))
 }
 
-fn cmd_map(
+struct MapArgs<'a> {
     path: Option<PathBuf>,
     max_tokens: Option<usize>,
     max_depth: Option<usize>,
-    format: &Format,
+    format: &'a Format,
     no_color: bool,
-    lang: Option<&str>,
+    lang: Option<&'a str>,
     public_only: bool,
-    kind: Option<&str>,
-    grep: Option<&str>,
-) -> anyhow::Result<()> {
-    let start = path.clone().unwrap_or_else(|| PathBuf::from("."));
+    kind: Option<&'a str>,
+    grep: Option<&'a str>,
+}
+
+fn cmd_map(args: MapArgs<'_>) -> anyhow::Result<()> {
+    let start = args.path.clone().unwrap_or_else(|| PathBuf::from("."));
     let start = std::fs::canonicalize(&start)
         .with_context(|| format!("cannot canonicalize path {}", start.display()))?;
 
     let repo_root = git::repo_root(&start).context("could not find git repository root")?;
 
     // Determine path prefix for filtering (relative to repo root)
-    let path_prefix = if let Some(p) = &path {
+    let path_prefix = if let Some(p) = &args.path {
         let abs_path = std::fs::canonicalize(p)
             .with_context(|| format!("cannot canonicalize path {}", p.display()))?;
-        // Only apply prefix filter if the given path is inside the repo and not the repo root itself
         if abs_path != repo_root {
-            if let Ok(rel) = abs_path.strip_prefix(&repo_root) {
+            abs_path.strip_prefix(&repo_root).ok().map(|rel| {
                 let mut prefix = rel.to_string_lossy().into_owned();
                 if !prefix.ends_with('/') {
                     prefix.push('/');
                 }
-                Some(prefix)
-            } else {
-                None
-            }
+                prefix
+            })
         } else {
             None
         }
@@ -218,30 +217,30 @@ fn cmd_map(
     let (file_sigs, _sigs, _refs) = scan_files(&registry, &repo_root, &files, &cache)?;
 
     // Build and apply filter
-    let langs = lang.map(|l| {
+    let langs = args.lang.map(|l| {
         l.split(',')
             .map(|s| s.trim().to_string())
             .collect::<Vec<_>>()
     });
-    let kinds = kind.map(|k| {
+    let kinds = args.kind.map(|k| {
         k.split(',')
             .filter_map(|s| parse_kind(s.trim()))
             .collect::<Vec<_>>()
     });
     let map_filter = MapFilter {
         lang: langs,
-        public_only,
+        public_only: args.public_only,
         kinds,
-        grep: grep.map(|s| s.to_string()),
-        max_depth,
+        grep: args.grep.map(|s| s.to_string()),
+        max_depth: args.max_depth,
         path_prefix,
     };
     let file_sigs = map_filter.apply(&file_sigs);
 
     use std::io::IsTerminal;
-    let color = !no_color && std::io::stdout().is_terminal();
+    let color = !args.no_color && std::io::stdout().is_terminal();
 
-    let output = match format {
+    let output = match args.format {
         Format::Text => render_text::render_map(&file_sigs, color),
         Format::Json => {
             render_json::render_map_json(&file_sigs).map_err(|e| anyhow::anyhow!("{e}"))?
@@ -249,9 +248,9 @@ fn cmd_map(
     };
 
     // Apply max_tokens budget: truncate if over limit
-    let output = if let Some(budget) = max_tokens {
-        let estimated_tokens = output.len() / 4;
-        if estimated_tokens > budget {
+    let output = if let Some(budget) = args.max_tokens {
+        let approx_tokens = output.len() / 4;
+        if approx_tokens > budget {
             let char_limit = budget * 4;
             let mut truncated = output[..char_limit.min(output.len())].to_string();
             truncated.push_str("\n... (output truncated due to --max-tokens budget)\n");
@@ -461,17 +460,17 @@ fn main() -> anyhow::Result<()> {
             public_only,
             kind,
             grep,
-        } => cmd_map(
-            path.clone(),
-            *max_tokens,
-            *max_depth,
+        } => cmd_map(MapArgs {
+            path: path.clone(),
+            max_tokens: *max_tokens,
+            max_depth: *max_depth,
             format,
-            *no_color,
-            lang.as_deref(),
-            *public_only,
-            kind.as_deref(),
-            grep.as_deref(),
-        )?,
+            no_color: *no_color,
+            lang: lang.as_deref(),
+            public_only: *public_only,
+            kind: kind.as_deref(),
+            grep: grep.as_deref(),
+        })?,
         Commands::Diff {
             range,
             path,
