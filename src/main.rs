@@ -1,8 +1,9 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand, ValueEnum};
 use sigdiff_core::{
-    FileSignatures, Reference, Signature,
+    FileSignatures, MapFilter, Reference, Signature,
     cache::{Cache, CacheEntry},
+    filter::parse_kind,
     git,
     render::{json as render_json, text as render_text},
 };
@@ -19,7 +20,7 @@ struct Cli {
 enum Commands {
     /// Show a map of all signatures in the repository
     Map {
-        /// Path to the repository root (defaults to current directory)
+        /// Path to filter (show only files under this path)
         path: Option<PathBuf>,
         #[arg(long)]
         max_tokens: Option<usize>,
@@ -29,6 +30,18 @@ enum Commands {
         format: Format,
         #[arg(long)]
         no_color: bool,
+        /// Filter by language (comma-separated, e.g. rust,python)
+        #[arg(long)]
+        lang: Option<String>,
+        /// Show only public signatures
+        #[arg(long)]
+        public_only: bool,
+        /// Filter by signature kind (comma-separated, e.g. struct,trait)
+        #[arg(long)]
+        kind: Option<String>,
+        /// Show only signatures whose name contains this pattern (case-insensitive)
+        #[arg(long)]
+        grep: Option<String>,
     },
     /// Show signature-level diff between git commits or worktree
     Diff {
@@ -163,14 +176,38 @@ fn cmd_map(
     max_depth: Option<usize>,
     format: &Format,
     no_color: bool,
+    lang: Option<&str>,
+    public_only: bool,
+    kind: Option<&str>,
+    grep: Option<&str>,
 ) -> anyhow::Result<()> {
-    let _ = (max_tokens, max_depth); // not yet used for filtering
-
-    let start = path.unwrap_or_else(|| PathBuf::from("."));
+    let start = path.clone().unwrap_or_else(|| PathBuf::from("."));
     let start = std::fs::canonicalize(&start)
         .with_context(|| format!("cannot canonicalize path {}", start.display()))?;
 
     let repo_root = git::repo_root(&start).context("could not find git repository root")?;
+
+    // Determine path prefix for filtering (relative to repo root)
+    let path_prefix = if let Some(p) = &path {
+        let abs_path = std::fs::canonicalize(p)
+            .with_context(|| format!("cannot canonicalize path {}", p.display()))?;
+        // Only apply prefix filter if the given path is inside the repo and not the repo root itself
+        if abs_path != repo_root {
+            if let Ok(rel) = abs_path.strip_prefix(&repo_root) {
+                let mut prefix = rel.to_string_lossy().into_owned();
+                if !prefix.ends_with('/') {
+                    prefix.push('/');
+                }
+                Some(prefix)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     let files = git::list_files(&repo_root).context("git ls-files failed")?;
 
@@ -179,6 +216,27 @@ fn cmd_map(
 
     let registry = build_registry();
     let (file_sigs, _sigs, _refs) = scan_files(&registry, &repo_root, &files, &cache)?;
+
+    // Build and apply filter
+    let langs = lang.map(|l| {
+        l.split(',')
+            .map(|s| s.trim().to_string())
+            .collect::<Vec<_>>()
+    });
+    let kinds = kind.map(|k| {
+        k.split(',')
+            .filter_map(|s| parse_kind(s.trim()))
+            .collect::<Vec<_>>()
+    });
+    let map_filter = MapFilter {
+        lang: langs,
+        public_only,
+        kinds,
+        grep: grep.map(|s| s.to_string()),
+        max_depth,
+        path_prefix,
+    };
+    let file_sigs = map_filter.apply(&file_sigs);
 
     use std::io::IsTerminal;
     let color = !no_color && std::io::stdout().is_terminal();
@@ -189,6 +247,22 @@ fn cmd_map(
             render_json::render_map_json(&file_sigs).map_err(|e| anyhow::anyhow!("{e}"))?
         }
     };
+
+    // Apply max_tokens budget: truncate if over limit
+    let output = if let Some(budget) = max_tokens {
+        let estimated_tokens = output.len() / 4;
+        if estimated_tokens > budget {
+            let char_limit = budget * 4;
+            let mut truncated = output[..char_limit.min(output.len())].to_string();
+            truncated.push_str("\n... (output truncated due to --max-tokens budget)\n");
+            truncated
+        } else {
+            output
+        }
+    } else {
+        output
+    };
+
     print!("{output}");
     Ok(())
 }
@@ -383,7 +457,21 @@ fn main() -> anyhow::Result<()> {
             max_depth,
             format,
             no_color,
-        } => cmd_map(path.clone(), *max_tokens, *max_depth, format, *no_color)?,
+            lang,
+            public_only,
+            kind,
+            grep,
+        } => cmd_map(
+            path.clone(),
+            *max_tokens,
+            *max_depth,
+            format,
+            *no_color,
+            lang.as_deref(),
+            *public_only,
+            kind.as_deref(),
+            grep.as_deref(),
+        )?,
         Commands::Diff {
             range,
             path,
