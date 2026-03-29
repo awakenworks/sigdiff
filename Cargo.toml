@@ -57,5 +57,8 @@ lang-ts = ["dep:sigdiff-lang-ts"]
 lang-go = ["dep:sigdiff-lang-go"]
 lang-java = ["dep:sigdiff-lang-java"]
 
+[dev-dependencies]
+serde_json = "1"
+
 [lints]
 workspace = true
