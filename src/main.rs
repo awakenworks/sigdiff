@@ -226,21 +226,19 @@ fn cmd_diff(
             let path_str = rel_path.to_string_lossy();
 
             // Old version from git
-            if let Ok(old_source) = git::show_file(&repo_root, &old_ref, &path_str) {
-                if let Some(provider) = registry.detect(rel_path) {
-                    if let Ok(fs) = provider.extract_signatures(rel_path, &old_source) {
-                        old_sigs.push(fs);
-                    }
-                }
+            if let Ok(old_source) = git::show_file(&repo_root, &old_ref, &path_str)
+                && let Some(provider) = registry.detect(rel_path)
+                && let Ok(fs) = provider.extract_signatures(rel_path, &old_source)
+            {
+                old_sigs.push(fs);
             }
 
             // New version from git
-            if let Ok(new_source) = git::show_file(&repo_root, &new_ref, &path_str) {
-                if let Some(provider) = registry.detect(rel_path) {
-                    if let Ok(fs) = provider.extract_signatures(rel_path, &new_source) {
-                        new_sigs.push(fs);
-                    }
-                }
+            if let Ok(new_source) = git::show_file(&repo_root, &new_ref, &path_str)
+                && let Some(provider) = registry.detect(rel_path)
+                && let Ok(fs) = provider.extract_signatures(rel_path, &new_source)
+            {
+                new_sigs.push(fs);
             }
         }
 
@@ -276,17 +274,17 @@ fn cmd_diff(
             }
 
             // Old from HEAD
-            if let Ok(old_source) = git::show_file(&repo_root, "HEAD", &rel_str) {
-                if let Ok(fs) = provider.extract_signatures(&rel_path, &old_source) {
-                    old_sigs.push(fs);
-                }
+            if let Ok(old_source) = git::show_file(&repo_root, "HEAD", &rel_str)
+                && let Ok(fs) = provider.extract_signatures(&rel_path, &old_source)
+            {
+                old_sigs.push(fs);
             }
 
             // New from working tree
-            if let Ok(new_source) = std::fs::read(file) {
-                if let Ok(fs) = provider.extract_signatures(&rel_path, &new_source) {
-                    new_sigs.push(fs);
-                }
+            if let Ok(new_source) = std::fs::read(file)
+                && let Ok(fs) = provider.extract_signatures(&rel_path, &new_source)
+            {
+                new_sigs.push(fs);
             }
         }
 

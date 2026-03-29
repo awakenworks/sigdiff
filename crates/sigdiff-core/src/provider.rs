@@ -20,6 +20,12 @@ pub struct LanguageRegistry {
     providers: Vec<Box<dyn LanguageProvider>>,
 }
 
+impl Default for LanguageRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LanguageRegistry {
     pub fn new() -> Self {
         Self {

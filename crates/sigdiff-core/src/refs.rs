@@ -59,16 +59,16 @@ pub fn resolve_refs(
         if r.file == target {
             continue;
         }
-        if target_defs.contains(&r.name.as_str()) {
-            if let Some(defs) = def_index.get(r.name.as_str()) {
-                for (def_file, kind) in defs {
-                    if *def_file == target {
-                        used_by.push(RefLink {
-                            identifier: r.name.clone(),
-                            file: r.file.clone(),
-                            kind: (*kind).clone(),
-                        });
-                    }
+        if target_defs.contains(&r.name.as_str())
+            && let Some(defs) = def_index.get(r.name.as_str())
+        {
+            for (def_file, kind) in defs {
+                if *def_file == target {
+                    used_by.push(RefLink {
+                        identifier: r.name.clone(),
+                        file: r.file.clone(),
+                        kind: (*kind).clone(),
+                    });
                 }
             }
         }
