@@ -1,7 +1,9 @@
+pub mod diff;
 pub mod git;
 pub mod provider;
 pub mod signature;
 
+pub use diff::{FileDiff, SignatureChange, diff_file_signatures, diff_signatures};
 pub use provider::{LanguageProvider, LanguageRegistry, Reference};
 pub use signature::{FileSignatures, Signature, SignatureKind, Visibility};
 
