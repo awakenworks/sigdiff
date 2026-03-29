@@ -1,0 +1,60 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sigdiff-core",
+    "crates/sigdiff-lang-rust",
+    "crates/sigdiff-lang-python",
+    "crates/sigdiff-lang-ts",
+    "crates/sigdiff-lang-go",
+    "crates/sigdiff-lang-java",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+sigdiff-core = { version = "0.1.0", path = "crates/sigdiff-core" }
+sigdiff-lang-rust = { version = "0.1.0", path = "crates/sigdiff-lang-rust" }
+sigdiff-lang-python = { version = "0.1.0", path = "crates/sigdiff-lang-python" }
+sigdiff-lang-ts = { version = "0.1.0", path = "crates/sigdiff-lang-ts" }
+sigdiff-lang-go = { version = "0.1.0", path = "crates/sigdiff-lang-go" }
+sigdiff-lang-java = { version = "0.1.0", path = "crates/sigdiff-lang-java" }
+tree-sitter = "0.26"
+tree-sitter-tags = "0.26"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+
+[package]
+name = "sigdiff"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sigdiff-core.workspace = true
+sigdiff-lang-rust = { workspace = true, optional = true }
+sigdiff-lang-python = { workspace = true, optional = true }
+sigdiff-lang-ts = { workspace = true, optional = true }
+sigdiff-lang-go = { workspace = true, optional = true }
+sigdiff-lang-java = { workspace = true, optional = true }
+clap = { version = "4", features = ["derive"] }
+
+[features]
+default = ["lang-rust", "lang-python", "lang-ts", "lang-go", "lang-java"]
+lang-rust = ["dep:sigdiff-lang-rust"]
+lang-python = ["dep:sigdiff-lang-python"]
+lang-ts = ["dep:sigdiff-lang-ts"]
+lang-go = ["dep:sigdiff-lang-go"]
+lang-java = ["dep:sigdiff-lang-java"]
+
+[lints]
+workspace = true

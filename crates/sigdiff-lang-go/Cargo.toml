@@ -1,0 +1,14 @@
+[package]
+name = "sigdiff-lang-go"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sigdiff-core.workspace = true
+tree-sitter.workspace = true
+tree-sitter-tags.workspace = true
+tree-sitter-go = "0.25"
+
+[lints]
+workspace = true
