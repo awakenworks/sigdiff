@@ -119,21 +119,27 @@ fn scan_files(
         let (sigs, refs) = if let Ok(Some(entry)) = cache.get(file) {
             (entry.signatures, entry.references)
         } else {
-            let source = std::fs::read(file)
-                .with_context(|| format!("failed to read {}", file.display()))?;
-            let sigs = provider
-                .extract_signatures(file, &source)
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let source = match std::fs::read(file) {
+                Ok(s) => s,
+                Err(_) => continue, // skip missing/unreadable files (broken symlinks, deleted but tracked)
+            };
+            let sigs = match provider.extract_signatures(file, &source) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
             let refs = provider
                 .extract_references(file, &source)
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
-            let mtime = std::fs::metadata(file)?.modified()?;
-            let entry = CacheEntry {
-                mtime,
-                signatures: sigs.signatures.clone(),
-                references: refs.clone(),
-            };
-            let _ = cache.put(file, &entry);
+                .unwrap_or_default();
+            if let Ok(meta) = std::fs::metadata(file)
+                && let Ok(mtime) = meta.modified()
+            {
+                let entry = CacheEntry {
+                    mtime,
+                    signatures: sigs.signatures.clone(),
+                    references: refs.clone(),
+                };
+                let _ = cache.put(file, &entry);
+            }
             (sigs.signatures, refs)
         };
 
