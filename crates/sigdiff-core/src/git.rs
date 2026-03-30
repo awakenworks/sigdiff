@@ -34,6 +34,7 @@ pub fn list_files(repo_path: &Path) -> Result<Vec<PathBuf>> {
     Ok(String::from_utf8_lossy(&output.stdout)
         .lines()
         .map(|l| repo_path.join(l))
+        .filter(|p| p.exists())
         .collect())
 }
 
@@ -57,8 +58,39 @@ pub fn diff_names(repo_path: &Path, old: &str, new: &str) -> Result<Vec<(FileSta
     if !output.status.success() {
         return Err(Error::Git("git diff --name-status failed".into()));
     }
+    parse_name_status(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// Get changed files in the working tree (both staged and unstaged) relative to HEAD.
+pub fn diff_worktree(repo_path: &Path) -> Result<Vec<(FileStatus, PathBuf)>> {
+    // Unstaged changes: git diff --name-status
+    let unstaged = Command::new("git")
+        .args(["diff", "--name-status"])
+        .current_dir(repo_path)
+        .output()?;
+    // Staged changes: git diff --name-status --cached
+    let staged = Command::new("git")
+        .args(["diff", "--name-status", "--cached"])
+        .current_dir(repo_path)
+        .output()?;
+
+    let mut result = parse_name_status(&String::from_utf8_lossy(&unstaged.stdout))?;
+    let staged_entries = parse_name_status(&String::from_utf8_lossy(&staged.stdout))?;
+
+    // Merge staged entries, avoiding duplicates (unstaged takes precedence)
+    let existing: std::collections::HashSet<PathBuf> =
+        result.iter().map(|(_, p)| p.clone()).collect();
+    for entry in staged_entries {
+        if !existing.contains(&entry.1) {
+            result.push(entry);
+        }
+    }
+    Ok(result)
+}
+
+fn parse_name_status(output: &str) -> Result<Vec<(FileStatus, PathBuf)>> {
     let mut result = Vec::new();
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
+    for line in output.lines() {
         let mut parts = line.split('\t');
         let status = match parts.next() {
             Some(s) if s.starts_with('A') => FileStatus::Added,

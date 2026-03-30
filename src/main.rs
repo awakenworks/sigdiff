@@ -324,46 +324,34 @@ fn cmd_diff(
         (old_sigs, new_sigs)
     } else {
         // Worktree diff: compare HEAD with current working tree
-        let changed = git::diff_names(&repo_root, "HEAD", "")
-            .or_else(|_| {
-                // fallback: compare HEAD with working tree using diff against index
-                git::diff_names(&repo_root, "--cached", "HEAD")
-            })
-            .context("git diff failed")?;
+        let changed = git::diff_worktree(&repo_root).context("git diff failed")?;
 
         let mut old_sigs: Vec<FileSignatures> = Vec::new();
         let mut new_sigs: Vec<FileSignatures> = Vec::new();
 
-        // Get all tracked files and compare HEAD vs working tree
-        let files = git::list_files(&repo_root).context("git ls-files failed")?;
-
-        for file in &files {
-            let rel_path = file.strip_prefix(&repo_root).unwrap_or(file).to_path_buf();
-            let rel_str = rel_path.to_string_lossy();
-
-            let provider = match registry.detect(&rel_path) {
+        for (status, rel_path) in &changed {
+            let provider = match registry.detect(rel_path) {
                 Some(p) => p,
                 None => continue,
             };
+            let path_str = rel_path.to_string_lossy();
 
-            // Check if this file was in the diff
-            let is_changed = changed.iter().any(|(_, p)| p == &rel_path);
-            if !is_changed {
-                continue;
-            }
-
-            // Old from HEAD
-            if let Ok(old_source) = git::show_file(&repo_root, "HEAD", &rel_str)
-                && let Ok(fs) = provider.extract_signatures(&rel_path, &old_source)
+            // Old from HEAD (skip for newly added files)
+            if *status != git::FileStatus::Added
+                && let Ok(old_source) = git::show_file(&repo_root, "HEAD", &path_str)
+                && let Ok(fs) = provider.extract_signatures(rel_path, &old_source)
             {
                 old_sigs.push(fs);
             }
 
-            // New from working tree
-            if let Ok(new_source) = std::fs::read(file)
-                && let Ok(fs) = provider.extract_signatures(&rel_path, &new_source)
-            {
-                new_sigs.push(fs);
+            // New from working tree (skip for deleted files)
+            if *status != git::FileStatus::Deleted {
+                let abs_path = repo_root.join(rel_path);
+                if let Ok(new_source) = std::fs::read(&abs_path)
+                    && let Ok(fs) = provider.extract_signatures(rel_path, &new_source)
+                {
+                    new_sigs.push(fs);
+                }
             }
         }
 
@@ -392,12 +380,20 @@ fn cmd_refs(
     format: &Format,
     no_color: bool,
 ) -> anyhow::Result<()> {
-    // Determine repo root from the path's directory
-    let abs_path = std::fs::canonicalize(&path)
-        .with_context(|| format!("cannot canonicalize path {}", path.display()))?;
-
-    let parent = abs_path.parent().unwrap_or(&abs_path);
-    let repo_root = git::repo_root(parent).context("could not find git repository root")?;
+    // Try to canonicalize; if the file doesn't exist, resolve repo root from cwd
+    let (repo_root, rel_target) = if let Ok(abs_path) = std::fs::canonicalize(&path) {
+        let parent = abs_path.parent().unwrap_or(&abs_path);
+        let root = git::repo_root(parent).context("could not find git repository root")?;
+        let rel = abs_path
+            .strip_prefix(&root)
+            .unwrap_or(&abs_path)
+            .to_path_buf();
+        (root, rel)
+    } else {
+        // File doesn't exist on disk — use cwd to find repo root, treat path as relative
+        let root = git::repo_root(Path::new(".")).context("could not find git repository root")?;
+        (root, path.clone())
+    };
 
     let files = git::list_files(&repo_root).context("git ls-files failed")?;
 
@@ -407,11 +403,6 @@ fn cmd_refs(
     let registry = build_registry();
     let (_file_sigs, all_signatures, all_references) =
         scan_files(&registry, &repo_root, &files, &cache)?;
-
-    let rel_target = abs_path
-        .strip_prefix(&repo_root)
-        .unwrap_or(&abs_path)
-        .to_path_buf();
 
     let mut file_refs = sigdiff_core::resolve_refs(&rel_target, &all_signatures, &all_references);
 
