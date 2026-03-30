@@ -13,6 +13,8 @@ members = [
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/aspect-build/sigdiff"
+rust-version = "1.85"
 
 [workspace.dependencies]
 sigdiff-core = { version = "0.1.0", path = "crates/sigdiff-core" }
@@ -38,6 +40,12 @@ name = "sigdiff"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Signature-level code diff tool -- track function, struct, and class changes across commits"
+readme = "README.md"
+keywords = ["diff", "tree-sitter", "code-analysis", "git"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 sigdiff-core.workspace = true
