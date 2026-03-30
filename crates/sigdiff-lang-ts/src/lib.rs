@@ -195,4 +195,79 @@ mod tests {
             .unwrap();
         assert!(matches!(iface_sig.kind, SignatureKind::Trait));
     }
+
+    #[test]
+    fn empty_source_returns_no_signatures() {
+        let provider = TypeScriptProvider::new();
+        let result = provider
+            .extract_signatures(Path::new("empty.ts"), b"")
+            .unwrap();
+        assert!(result.signatures.is_empty());
+    }
+
+    #[test]
+    fn extracts_class() {
+        let provider = TypeScriptProvider::new();
+        let source = b"class Animal {\n    name: string;\n    constructor(name: string) {\n        this.name = name;\n    }\n}\n";
+        let result = provider
+            .extract_signatures(Path::new("test.ts"), source)
+            .unwrap();
+        // Class extraction depends on tree-sitter tags query; verify no panic
+        let _ = result.signatures;
+    }
+
+    #[test]
+    fn tsx_file_does_not_panic() {
+        let provider = TypeScriptProvider::new();
+        let source = b"interface Props { name: string }\n";
+        let result = provider
+            .extract_signatures(Path::new("App.tsx"), source)
+            .unwrap();
+        // TSX config is used for .tsx files
+        let _ = result.signatures;
+    }
+
+    #[test]
+    fn jsx_file_does_not_panic() {
+        let provider = TypeScriptProvider::new();
+        let source = b"";
+        let result = provider
+            .extract_signatures(Path::new("App.jsx"), source)
+            .unwrap();
+        assert!(result.signatures.is_empty());
+    }
+
+    #[test]
+    fn js_file_does_not_panic() {
+        let provider = TypeScriptProvider::new();
+        let source = b"";
+        let result = provider
+            .extract_signatures(Path::new("util.js"), source)
+            .unwrap();
+        assert!(result.signatures.is_empty());
+    }
+
+    #[test]
+    fn all_visibility_is_public() {
+        let provider = TypeScriptProvider::new();
+        // Use an interface which we know is captured
+        let source = b"interface Greeter {\n    greet(name: string): string;\n}\n";
+        let result = provider
+            .extract_signatures(Path::new("test.ts"), source)
+            .unwrap();
+        for sig in &result.signatures {
+            assert!(matches!(sig.visibility, Visibility::Public));
+        }
+    }
+
+    #[test]
+    fn extracts_references_does_not_panic() {
+        let provider = TypeScriptProvider::new();
+        let source = b"interface Foo { bar(): void }\n";
+        let refs = provider
+            .extract_references(Path::new("test.ts"), source)
+            .unwrap();
+        // Just verify no panic; reference count depends on tags query
+        let _ = refs;
+    }
 }

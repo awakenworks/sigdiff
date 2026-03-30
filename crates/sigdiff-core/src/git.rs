@@ -190,4 +190,120 @@ mod tests {
                 .any(|(s, p)| p.ends_with("world.rs") && *s == FileStatus::Added)
         );
     }
+
+    #[test]
+    fn parse_name_status_added() {
+        let result = parse_name_status("A\tnew_file.rs\n").unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, FileStatus::Added);
+        assert_eq!(result[0].1, PathBuf::from("new_file.rs"));
+    }
+
+    #[test]
+    fn parse_name_status_modified() {
+        let result = parse_name_status("M\texisting.rs\n").unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, FileStatus::Modified);
+    }
+
+    #[test]
+    fn parse_name_status_deleted() {
+        let result = parse_name_status("D\tremoved.rs\n").unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, FileStatus::Deleted);
+    }
+
+    #[test]
+    fn parse_name_status_renamed() {
+        // Git rename format: R100\told_name\tnew_name
+        let result = parse_name_status("R100\told.rs\tnew.rs\n").unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, FileStatus::Renamed);
+        assert_eq!(result[0].1, PathBuf::from("new.rs"));
+    }
+
+    #[test]
+    fn parse_name_status_multiple() {
+        let input = "A\ta.rs\nM\tb.rs\nD\tc.rs\n";
+        let result = parse_name_status(input).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].0, FileStatus::Added);
+        assert_eq!(result[1].0, FileStatus::Modified);
+        assert_eq!(result[2].0, FileStatus::Deleted);
+    }
+
+    #[test]
+    fn parse_name_status_empty_input() {
+        let result = parse_name_status("").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_name_status_unknown_status_skipped() {
+        let result = parse_name_status("X\tunknown.rs\n").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn repo_root_returns_correct_path() {
+        let dir = setup_test_repo();
+        let root = repo_root(dir.path()).unwrap();
+        // Canonicalize both to handle symlinks (e.g., /tmp -> /private/tmp on macOS)
+        let expected = std::fs::canonicalize(dir.path()).unwrap();
+        let actual = std::fs::canonicalize(root).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn repo_root_fails_for_non_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = repo_root(dir.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn diff_worktree_detects_unstaged_changes() {
+        let dir = setup_test_repo();
+        let d = dir.path();
+        // Modify a tracked file without staging
+        std::fs::write(d.join("hello.rs"), "fn hello() { changed(); }").unwrap();
+        let changes = diff_worktree(d).unwrap();
+        assert!(
+            changes
+                .iter()
+                .any(|(s, p)| p.ends_with("hello.rs") && *s == FileStatus::Modified)
+        );
+    }
+
+    #[test]
+    fn diff_worktree_detects_staged_changes() {
+        let dir = setup_test_repo();
+        let d = dir.path();
+        std::fs::write(d.join("new.rs"), "fn new_fn() {}").unwrap();
+        Command::new("git")
+            .args(["add", "new.rs"])
+            .current_dir(d)
+            .output()
+            .unwrap();
+        let changes = diff_worktree(d).unwrap();
+        assert!(
+            changes
+                .iter()
+                .any(|(s, p)| p.ends_with("new.rs") && *s == FileStatus::Added)
+        );
+    }
+
+    #[test]
+    fn diff_worktree_empty_when_clean() {
+        let dir = setup_test_repo();
+        let changes = diff_worktree(dir.path()).unwrap();
+        assert!(changes.is_empty());
+    }
+
+    #[test]
+    fn show_file_fails_for_nonexistent_path() {
+        let dir = setup_test_repo();
+        let result = show_file(dir.path(), "HEAD", "nonexistent.rs");
+        assert!(result.is_err());
+    }
 }

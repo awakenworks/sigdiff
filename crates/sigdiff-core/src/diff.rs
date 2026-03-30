@@ -136,4 +136,110 @@ mod tests {
         );
         assert!(d.is_empty());
     }
+
+    #[test]
+    fn empty_both_sides() {
+        let d = diff_signatures(&[], &[]);
+        assert!(d.is_empty());
+    }
+
+    #[test]
+    fn multiple_changes_at_once() {
+        let old = vec![
+            sig("kept", "fn kept()"),
+            sig("removed", "fn removed()"),
+            sig("changed", "fn changed()"),
+        ];
+        let new = vec![
+            sig("kept", "fn kept()"),
+            sig("added", "fn added()"),
+            sig("changed", "fn changed(x: i32)"),
+        ];
+        let d = diff_signatures(&old, &new);
+        assert_eq!(d.len(), 3);
+        assert!(
+            d.iter()
+                .any(|c| matches!(c, SignatureChange::Added(s) if s.name == "added"))
+        );
+        assert!(
+            d.iter()
+                .any(|c| matches!(c, SignatureChange::Removed(s) if s.name == "removed"))
+        );
+        assert!(
+            d.iter().any(
+                |c| matches!(c, SignatureChange::Modified { old, .. } if old.name == "changed")
+            )
+        );
+    }
+
+    #[test]
+    fn diff_file_signatures_groups_by_file() {
+        let old_files = vec![FileSignatures {
+            path: "a.rs".into(),
+            language: "rust".into(),
+            signatures: vec![Signature {
+                file: "a.rs".into(),
+                name: "hello".into(),
+                kind: SignatureKind::Function,
+                visibility: Visibility::Public,
+                text: "fn hello()".into(),
+                line: 1,
+                parent: None,
+            }],
+        }];
+        let new_files = vec![
+            FileSignatures {
+                path: "a.rs".into(),
+                language: "rust".into(),
+                signatures: vec![Signature {
+                    file: "a.rs".into(),
+                    name: "hello".into(),
+                    kind: SignatureKind::Function,
+                    visibility: Visibility::Public,
+                    text: "fn hello(name: &str)".into(),
+                    line: 1,
+                    parent: None,
+                }],
+            },
+            FileSignatures {
+                path: "b.rs".into(),
+                language: "rust".into(),
+                signatures: vec![Signature {
+                    file: "b.rs".into(),
+                    name: "world".into(),
+                    kind: SignatureKind::Function,
+                    visibility: Visibility::Public,
+                    text: "fn world()".into(),
+                    line: 1,
+                    parent: None,
+                }],
+            },
+        ];
+        let diffs = diff_file_signatures(&old_files, &new_files);
+        // Should have changes in both files
+        assert_eq!(diffs.len(), 2);
+        // Should be sorted by path
+        assert_eq!(diffs[0].path, PathBuf::from("a.rs"));
+        assert_eq!(diffs[1].path, PathBuf::from("b.rs"));
+        // a.rs should have a Modified change
+        assert!(
+            diffs[0]
+                .changes
+                .iter()
+                .any(|c| matches!(c, SignatureChange::Modified { .. }))
+        );
+        // b.rs should have an Added change
+        assert!(
+            diffs[1]
+                .changes
+                .iter()
+                .any(|c| matches!(c, SignatureChange::Added(_)))
+        );
+    }
+
+    #[test]
+    fn diff_file_signatures_empty() {
+        let diffs = diff_file_signatures(&[], &[]);
+        assert!(diffs.is_empty());
+    }
 }

@@ -50,7 +50,10 @@ fn extract_signature_text(source: &[u8], range_start: usize, range_end: usize) -
 }
 
 fn detect_visibility(name: &str) -> Visibility {
-    if name.starts_with("__") && !name.ends_with("__") {
+    if name.starts_with("__") && name.ends_with("__") {
+        // Dunder methods (__init__, __str__, etc.) are public
+        Visibility::Public
+    } else if name.starts_with("__") {
         Visibility::Private
     } else if name.starts_with('_') {
         Visibility::Crate
@@ -171,5 +174,76 @@ mod tests {
             .find(|s| s.name == "MyClass")
             .unwrap();
         assert!(matches!(class_sig.kind, SignatureKind::Class));
+    }
+
+    #[test]
+    fn empty_source_returns_no_signatures() {
+        let provider = PythonProvider::new();
+        let result = provider
+            .extract_signatures(Path::new("empty.py"), b"")
+            .unwrap();
+        assert!(result.signatures.is_empty());
+    }
+
+    #[test]
+    fn detects_private_double_underscore() {
+        let provider = PythonProvider::new();
+        let source = b"def __secret():\n    pass\n";
+        let result = provider
+            .extract_signatures(Path::new("test.py"), source)
+            .unwrap();
+        assert_eq!(result.signatures.len(), 1);
+        assert!(matches!(
+            result.signatures[0].visibility,
+            Visibility::Private
+        ));
+    }
+
+    #[test]
+    fn detects_protected_single_underscore() {
+        let provider = PythonProvider::new();
+        let source = b"def _internal():\n    pass\n";
+        let result = provider
+            .extract_signatures(Path::new("test.py"), source)
+            .unwrap();
+        assert_eq!(result.signatures.len(), 1);
+        assert!(matches!(result.signatures[0].visibility, Visibility::Crate));
+    }
+
+    #[test]
+    fn dunder_methods_are_public() {
+        let provider = PythonProvider::new();
+        let source = b"class Foo:\n    def __init__(self):\n        pass\n";
+        let result = provider
+            .extract_signatures(Path::new("test.py"), source)
+            .unwrap();
+        let init_sig = result
+            .signatures
+            .iter()
+            .find(|s| s.name == "__init__")
+            .unwrap();
+        // __init__ ends with __, so it's public (dunder method)
+        assert!(matches!(init_sig.visibility, Visibility::Public));
+    }
+
+    #[test]
+    fn extracts_references() {
+        let provider = PythonProvider::new();
+        let source = b"def greet():\n    pass\n\ndef main():\n    greet()\n";
+        let refs = provider
+            .extract_references(Path::new("test.py"), source)
+            .unwrap();
+        let names: Vec<&str> = refs.iter().map(|r| r.name.as_str()).collect();
+        assert!(names.contains(&"greet"));
+    }
+
+    #[test]
+    fn signature_text_is_first_line_only() {
+        let provider = PythonProvider::new();
+        let source = b"def multi_line(\n    arg1: int,\n    arg2: str\n) -> None:\n    pass\n";
+        let result = provider
+            .extract_signatures(Path::new("test.py"), source)
+            .unwrap();
+        assert!(!result.signatures[0].text.contains('\n'));
     }
 }

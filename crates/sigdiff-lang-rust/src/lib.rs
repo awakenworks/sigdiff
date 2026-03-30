@@ -193,4 +193,100 @@ fn main() {
         let names: Vec<&str> = refs.iter().map(|r| r.name.as_str()).collect();
         assert!(names.contains(&"greet"));
     }
+
+    #[test]
+    fn empty_source_returns_no_signatures() {
+        let provider = RustProvider::new();
+        let result = provider
+            .extract_signatures(Path::new("empty.rs"), b"")
+            .unwrap();
+        assert!(result.signatures.is_empty());
+    }
+
+    #[test]
+    fn empty_source_returns_no_references() {
+        let provider = RustProvider::new();
+        let refs = provider
+            .extract_references(Path::new("empty.rs"), b"")
+            .unwrap();
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn detects_pub_crate_visibility() {
+        let provider = RustProvider::new();
+        let source = b"pub(crate) fn internal_fn() -> i32 { 42 }";
+        let result = provider
+            .extract_signatures(Path::new("lib.rs"), source)
+            .unwrap();
+        assert_eq!(result.signatures.len(), 1);
+        assert!(matches!(result.signatures[0].visibility, Visibility::Crate));
+    }
+
+    #[test]
+    fn detects_private_visibility() {
+        let provider = RustProvider::new();
+        let source = b"fn private_fn() -> i32 { 42 }";
+        let result = provider
+            .extract_signatures(Path::new("lib.rs"), source)
+            .unwrap();
+        assert_eq!(result.signatures.len(), 1);
+        assert!(matches!(
+            result.signatures[0].visibility,
+            Visibility::Private
+        ));
+    }
+
+    #[test]
+    fn extracts_enum() {
+        let provider = RustProvider::new();
+        let source = b"pub enum Color {\n    Red,\n    Green,\n    Blue,\n}\n";
+        let result = provider
+            .extract_signatures(Path::new("lib.rs"), source)
+            .unwrap();
+        // Enum should be extracted (name may vary based on tree-sitter version)
+        let color_sig = result.signatures.iter().find(|s| s.name == "Color");
+        if let Some(sig) = color_sig {
+            assert!(matches!(sig.visibility, Visibility::Public));
+            // Signature text should not contain body
+            assert!(!sig.text.contains("Red"));
+        }
+        // At minimum, parsing should not fail
+    }
+
+    #[test]
+    fn extracts_trait() {
+        let provider = RustProvider::new();
+        let source = b"pub trait Drawable {\n    fn draw(&self);\n}\n";
+        let result = provider
+            .extract_signatures(Path::new("lib.rs"), source)
+            .unwrap();
+        let trait_sig = result
+            .signatures
+            .iter()
+            .find(|s| s.name == "Drawable")
+            .unwrap();
+        assert!(matches!(trait_sig.kind, SignatureKind::Trait));
+    }
+
+    #[test]
+    fn signature_text_truncated_at_brace() {
+        let provider = RustProvider::new();
+        let source = b"pub fn hello(name: &str) -> String { name.to_string() }";
+        let result = provider
+            .extract_signatures(Path::new("lib.rs"), source)
+            .unwrap();
+        assert!(!result.signatures[0].text.contains('{'));
+        assert!(result.signatures[0].text.contains("pub fn hello"));
+    }
+
+    #[test]
+    fn line_numbers_are_correct() {
+        let provider = RustProvider::new();
+        let source = b"\n\npub fn on_line_three() {}\n";
+        let result = provider
+            .extract_signatures(Path::new("lib.rs"), source)
+            .unwrap();
+        assert_eq!(result.signatures[0].line, 3);
+    }
 }

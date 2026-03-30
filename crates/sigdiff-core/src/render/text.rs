@@ -143,7 +143,148 @@ mod tests {
             ],
         }];
         let output = render_diff(&diffs, false);
-        assert!(output.contains("+"));
-        assert!(output.contains("-"));
+        assert!(output.contains("+   pub fn hello()"));
+        assert!(output.contains("-   pub fn bye()"));
+    }
+
+    #[test]
+    fn renders_diff_modified() {
+        let diffs = vec![FileDiff {
+            path: "t.rs".into(),
+            changes: vec![SignatureChange::Modified {
+                old: sig("update", "fn update()"),
+                new: sig("update", "fn update(x: i32)"),
+            }],
+        }];
+        let output = render_diff(&diffs, false);
+        assert!(output.contains("~   fn update()"));
+        assert!(output.contains("→  fn update(x: i32)"));
+    }
+
+    #[test]
+    fn renders_diff_with_color() {
+        let diffs = vec![FileDiff {
+            path: "t.rs".into(),
+            changes: vec![
+                SignatureChange::Added(sig("hello", "pub fn hello()")),
+                SignatureChange::Removed(sig("bye", "pub fn bye()")),
+                SignatureChange::Modified {
+                    old: sig("update", "fn update()"),
+                    new: sig("update", "fn update(x: i32)"),
+                },
+            ],
+        }];
+        let output = render_diff(&diffs, true);
+        assert!(output.contains(GREEN));
+        assert!(output.contains(RED));
+        assert!(output.contains(YELLOW));
+        assert!(output.contains(RESET));
+    }
+
+    #[test]
+    fn renders_map_with_color() {
+        let sigs = vec![FileSignatures {
+            path: "src/main.rs".into(),
+            language: "rust".into(),
+            signatures: vec![sig("main", "fn main()")],
+        }];
+        let output = render_map(&sigs, true);
+        assert!(output.contains(CYAN));
+        assert!(output.contains(RESET));
+    }
+
+    #[test]
+    fn renders_map_skips_empty_files() {
+        let sigs = vec![
+            FileSignatures {
+                path: "src/empty.rs".into(),
+                language: "rust".into(),
+                signatures: vec![],
+            },
+            FileSignatures {
+                path: "src/main.rs".into(),
+                language: "rust".into(),
+                signatures: vec![sig("main", "fn main()")],
+            },
+        ];
+        let output = render_map(&sigs, false);
+        assert!(!output.contains("empty.rs"));
+        assert!(output.contains("src/main.rs:"));
+    }
+
+    #[test]
+    fn renders_diff_skips_empty_changes() {
+        let diffs = vec![
+            FileDiff {
+                path: "empty.rs".into(),
+                changes: vec![],
+            },
+            FileDiff {
+                path: "t.rs".into(),
+                changes: vec![SignatureChange::Added(sig("hello", "pub fn hello()"))],
+            },
+        ];
+        let output = render_diff(&diffs, false);
+        assert!(!output.contains("empty.rs"));
+        assert!(output.contains("t.rs:"));
+    }
+
+    #[test]
+    fn renders_refs() {
+        use crate::refs::{FileRefs, RefLink};
+        let file_refs = FileRefs {
+            path: "a.rs".into(),
+            signatures: vec![sig("hello", "pub fn hello()")],
+            uses: vec![RefLink {
+                identifier: "world".into(),
+                file: "b.rs".into(),
+                kind: SignatureKind::Function,
+            }],
+            used_by: vec![RefLink {
+                identifier: "hello".into(),
+                file: "c.rs".into(),
+                kind: SignatureKind::Function,
+            }],
+        };
+        let output = render_refs(&file_refs, false);
+        assert!(output.contains("a.rs:"));
+        assert!(output.contains("pub fn hello()"));
+        assert!(output.contains("→ uses:"));
+        assert!(output.contains("world (b.rs)"));
+        assert!(output.contains("← used by:"));
+        assert!(output.contains("hello (c.rs)"));
+    }
+
+    #[test]
+    fn renders_refs_with_color() {
+        use crate::refs::{FileRefs, RefLink};
+        let file_refs = FileRefs {
+            path: "a.rs".into(),
+            signatures: vec![sig("hello", "pub fn hello()")],
+            uses: vec![RefLink {
+                identifier: "world".into(),
+                file: "b.rs".into(),
+                kind: SignatureKind::Function,
+            }],
+            used_by: vec![],
+        };
+        let output = render_refs(&file_refs, true);
+        assert!(output.contains(CYAN));
+        assert!(output.contains(DIM));
+    }
+
+    #[test]
+    fn renders_refs_no_uses_or_used_by() {
+        use crate::refs::FileRefs;
+        let file_refs = FileRefs {
+            path: "a.rs".into(),
+            signatures: vec![sig("hello", "pub fn hello()")],
+            uses: vec![],
+            used_by: vec![],
+        };
+        let output = render_refs(&file_refs, false);
+        assert!(output.contains("a.rs:"));
+        assert!(!output.contains("→ uses:"));
+        assert!(!output.contains("← used by:"));
     }
 }

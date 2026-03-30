@@ -168,4 +168,71 @@ mod tests {
             .unwrap();
         assert!(matches!(helper_sig.visibility, Visibility::Private));
     }
+
+    #[test]
+    fn empty_source_returns_no_signatures() {
+        let provider = GoProvider::new();
+        let result = provider
+            .extract_signatures(Path::new("empty.go"), b"")
+            .unwrap();
+        assert!(result.signatures.is_empty());
+    }
+
+    #[test]
+    fn extracts_struct() {
+        let provider = GoProvider::new();
+        let source = b"package main\n\ntype User struct {\n\tName string\n\tAge  int\n}\n";
+        let result = provider
+            .extract_signatures(Path::new("test.go"), source)
+            .unwrap();
+        let user_sig = result.signatures.iter().find(|s| s.name == "User").unwrap();
+        assert!(matches!(user_sig.visibility, Visibility::Public));
+        assert!(!user_sig.text.contains("Name string"));
+    }
+
+    #[test]
+    fn extracts_method_on_struct() {
+        let provider = GoProvider::new();
+        let source = b"package main\n\ntype User struct{}\n\nfunc (u *User) Greet() string {\n\treturn \"hello\"\n}\n";
+        let result = provider
+            .extract_signatures(Path::new("test.go"), source)
+            .unwrap();
+        let names: Vec<&str> = result.signatures.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"Greet"));
+    }
+
+    #[test]
+    fn extracts_interface() {
+        let provider = GoProvider::new();
+        let source =
+            b"package main\n\ntype Reader interface {\n\tRead(p []byte) (n int, err error)\n}\n";
+        let result = provider
+            .extract_signatures(Path::new("test.go"), source)
+            .unwrap();
+        let names: Vec<&str> = result.signatures.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"Reader"));
+    }
+
+    #[test]
+    fn extracts_references() {
+        let provider = GoProvider::new();
+        let source =
+            b"package main\n\nfunc Add(a, b int) int { return a + b }\nfunc main() { Add(1, 2) }\n";
+        let refs = provider
+            .extract_references(Path::new("test.go"), source)
+            .unwrap();
+        let names: Vec<&str> = refs.iter().map(|r| r.name.as_str()).collect();
+        assert!(names.contains(&"Add"));
+    }
+
+    #[test]
+    fn signature_text_truncated_at_brace() {
+        let provider = GoProvider::new();
+        let source = b"package main\n\nfunc Add(a, b int) int {\n\treturn a + b\n}\n";
+        let result = provider
+            .extract_signatures(Path::new("test.go"), source)
+            .unwrap();
+        let add_sig = result.signatures.iter().find(|s| s.name == "Add").unwrap();
+        assert!(!add_sig.text.contains('{'));
+    }
 }

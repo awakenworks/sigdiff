@@ -104,4 +104,79 @@ mod tests {
         cache.put(&file, &entry).unwrap();
         assert!(cache.get(&file).unwrap().is_none());
     }
+
+    #[test]
+    fn cache_clear_removes_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_dir = dir.path().join(".sigdiff/cache");
+        let cache = Cache::new(cache_dir.clone());
+        let file = dir.path().join("t.rs");
+        std::fs::write(&file, "fn hello() {}").unwrap();
+        let entry = CacheEntry {
+            mtime: std::fs::metadata(&file).unwrap().modified().unwrap(),
+            signatures: vec![],
+            references: vec![],
+        };
+        cache.put(&file, &entry).unwrap();
+        assert!(cache_dir.exists());
+        cache.clear().unwrap();
+        assert!(!cache_dir.exists());
+    }
+
+    #[test]
+    fn cache_clear_on_nonexistent_dir_is_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = Cache::new(dir.path().join("nonexistent/cache"));
+        assert!(cache.clear().is_ok());
+    }
+
+    #[test]
+    fn cache_miss_on_nonexistent_cache_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = Cache::new(dir.path().join(".sigdiff/cache"));
+        let file = dir.path().join("t.rs");
+        // File doesn't exist in cache at all
+        std::fs::write(&file, "fn hello() {}").unwrap();
+        assert!(cache.get(&file).unwrap().is_none());
+    }
+
+    #[test]
+    fn cache_miss_on_corrupted_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_dir = dir.path().join(".sigdiff/cache");
+        let cache = Cache::new(cache_dir.clone());
+        let file = dir.path().join("t.rs");
+        std::fs::write(&file, "fn hello() {}").unwrap();
+
+        // Write corrupted data to the cache path
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&file, &mut hasher);
+        let cache_path = cache_dir.join(format!("{:x}.bin", std::hash::Hasher::finish(&hasher)));
+        std::fs::write(cache_path, b"corrupted data").unwrap();
+
+        // Should return None (graceful handling), not error
+        assert!(cache.get(&file).unwrap().is_none());
+    }
+
+    #[test]
+    fn cache_stores_and_retrieves_references() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = Cache::new(dir.path().join(".sigdiff/cache"));
+        let file = dir.path().join("t.rs");
+        std::fs::write(&file, "fn hello() {}").unwrap();
+        let entry = CacheEntry {
+            mtime: std::fs::metadata(&file).unwrap().modified().unwrap(),
+            signatures: vec![],
+            references: vec![crate::Reference {
+                file: "t.rs".into(),
+                name: "world".into(),
+                line: 5,
+            }],
+        };
+        cache.put(&file, &entry).unwrap();
+        let cached = cache.get(&file).unwrap().unwrap();
+        assert_eq!(cached.references.len(), 1);
+        assert_eq!(cached.references[0].name, "world");
+    }
 }

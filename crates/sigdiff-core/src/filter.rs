@@ -426,6 +426,93 @@ mod tests {
     }
 
     #[test]
+    fn test_kind_filter_struct_class_equivalence() {
+        // Filtering by Struct should also match Class (and vice versa)
+        let files = vec![make_file(
+            "src/lib.rs",
+            "rust",
+            vec![
+                make_sig("MyStruct", SignatureKind::Struct, Visibility::Public),
+                make_sig("MyClass", SignatureKind::Class, Visibility::Public),
+                make_sig("my_fn", SignatureKind::Function, Visibility::Public),
+            ],
+        )];
+
+        // Filter by Struct should match both Struct and Class
+        let filter = MapFilter {
+            kinds: Some(vec![SignatureKind::Struct]),
+            ..no_filter()
+        };
+        let result = filter.apply(&files);
+        assert_eq!(result[0].signatures.len(), 2);
+
+        // Filter by Class should match both Struct and Class
+        let filter = MapFilter {
+            kinds: Some(vec![SignatureKind::Class]),
+            ..no_filter()
+        };
+        let result = filter.apply(&files);
+        assert_eq!(result[0].signatures.len(), 2);
+    }
+
+    #[test]
+    fn test_all_filtered_out_returns_empty() {
+        let files = vec![make_file(
+            "src/lib.rs",
+            "rust",
+            vec![make_sig(
+                "private_fn",
+                SignatureKind::Function,
+                Visibility::Private,
+            )],
+        )];
+        let filter = MapFilter {
+            public_only: true,
+            ..no_filter()
+        };
+        let result = filter.apply(&files);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_lang_filter_case_insensitive() {
+        let files = vec![make_file(
+            "src/main.rs",
+            "Rust",
+            vec![make_sig(
+                "main",
+                SignatureKind::Function,
+                Visibility::Public,
+            )],
+        )];
+        let filter = MapFilter {
+            lang: Some(vec!["rust".to_string()]),
+            ..no_filter()
+        };
+        let result = filter.apply(&files);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_grep_no_match() {
+        let files = vec![make_file(
+            "src/lib.rs",
+            "rust",
+            vec![make_sig(
+                "hello",
+                SignatureKind::Function,
+                Visibility::Public,
+            )],
+        )];
+        let filter = MapFilter {
+            grep: Some("nonexistent".to_string()),
+            ..no_filter()
+        };
+        let result = filter.apply(&files);
+        assert!(result.is_empty());
+    }
+
+    #[test]
     fn test_parse_kind() {
         assert_eq!(parse_kind("function"), Some(SignatureKind::Function));
         assert_eq!(parse_kind("fn"), Some(SignatureKind::Function));

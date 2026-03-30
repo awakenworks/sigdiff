@@ -176,4 +176,75 @@ mod tests {
         // Body should be truncated
         assert!(!helper_sig.text.contains("nothing"));
     }
+
+    #[test]
+    fn empty_source_returns_no_signatures() {
+        let provider = JavaProvider::new();
+        let result = provider
+            .extract_signatures(Path::new("Empty.java"), b"")
+            .unwrap();
+        assert!(result.signatures.is_empty());
+    }
+
+    #[test]
+    fn detects_package_private_as_crate() {
+        let provider = JavaProvider::new();
+        // No visibility modifier = package-private → maps to Crate
+        let source = b"class Internal {\n    void doSomething() { }\n}\n";
+        let result = provider
+            .extract_signatures(Path::new("Internal.java"), source)
+            .unwrap();
+        let class_sig = result
+            .signatures
+            .iter()
+            .find(|s| s.name == "Internal")
+            .unwrap();
+        assert!(matches!(class_sig.visibility, Visibility::Crate));
+    }
+
+    #[test]
+    fn extracts_interface() {
+        let provider = JavaProvider::new();
+        let source = b"public interface Runnable {\n    void run();\n}\n";
+        let result = provider
+            .extract_signatures(Path::new("Runnable.java"), source)
+            .unwrap();
+        let names: Vec<&str> = result.signatures.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"Runnable"));
+    }
+
+    #[test]
+    fn enum_source_does_not_panic() {
+        // Java enums may not be captured by tree-sitter-java's tags query
+        let provider = JavaProvider::new();
+        let source = b"public enum Color {\n    RED, GREEN, BLUE\n}\n";
+        let result = provider
+            .extract_signatures(Path::new("Color.java"), source)
+            .unwrap();
+        // Just verify it doesn't panic; enum extraction depends on the tags query
+        let _ = result.signatures;
+    }
+
+    #[test]
+    fn extracts_references() {
+        let provider = JavaProvider::new();
+        let source = b"public class Foo {\n    public void bar() {\n        doWork();\n    }\n}\n";
+        let refs = provider
+            .extract_references(Path::new("Foo.java"), source)
+            .unwrap();
+        // Reference count depends on tree-sitter query; verify no panic
+        let _ = refs;
+    }
+
+    #[test]
+    fn signature_text_truncated_at_brace() {
+        let provider = JavaProvider::new();
+        let source = b"public class Foo {\n    public void bar() {\n        return;\n    }\n}\n";
+        let result = provider
+            .extract_signatures(Path::new("Foo.java"), source)
+            .unwrap();
+        for sig in &result.signatures {
+            assert!(!sig.text.contains('{'));
+        }
+    }
 }

@@ -137,4 +137,71 @@ mod tests {
                 .any(|r| r.identifier == "world" && r.file == PathBuf::from("a.rs"))
         );
     }
+
+    #[test]
+    fn no_refs_returns_empty_uses_and_used_by() {
+        let sigs = vec![sig("a.rs", "hello")];
+        let refs = vec![];
+        let result = resolve_refs(Path::new("a.rs"), &sigs, &refs);
+        assert!(result.uses.is_empty());
+        assert!(result.used_by.is_empty());
+        assert_eq!(result.signatures.len(), 1);
+    }
+
+    #[test]
+    fn self_references_excluded() {
+        // A reference within the same file to its own definition should not appear
+        let sigs = vec![sig("a.rs", "hello"), sig("a.rs", "world")];
+        let refs = vec![reference("a.rs", "hello")]; // a.rs references its own "hello"
+        let result = resolve_refs(Path::new("a.rs"), &sigs, &refs);
+        // "hello" is defined in a.rs and referenced from a.rs — self-ref excluded from uses
+        assert!(result.uses.is_empty());
+    }
+
+    #[test]
+    fn deduplicates_refs() {
+        let sigs = vec![sig("a.rs", "hello"), sig("b.rs", "world")];
+        // Same reference appearing conceptually (from same file to same def)
+        let refs = vec![reference("a.rs", "world"), reference("a.rs", "world")];
+        let result = resolve_refs(Path::new("a.rs"), &sigs, &refs);
+        // Should be deduplicated
+        assert_eq!(result.uses.len(), 1);
+    }
+
+    #[test]
+    fn empty_inputs() {
+        let result = resolve_refs(Path::new("a.rs"), &[], &[]);
+        assert!(result.signatures.is_empty());
+        assert!(result.uses.is_empty());
+        assert!(result.used_by.is_empty());
+    }
+
+    #[test]
+    fn target_signatures_collected() {
+        let sigs = vec![
+            sig("a.rs", "hello"),
+            sig("a.rs", "world"),
+            sig("b.rs", "other"),
+        ];
+        let result = resolve_refs(Path::new("a.rs"), &sigs, &[]);
+        assert_eq!(result.signatures.len(), 2);
+        assert!(
+            result
+                .signatures
+                .iter()
+                .all(|s| s.file == PathBuf::from("a.rs"))
+        );
+    }
+
+    #[test]
+    fn multiple_files_use_target() {
+        let sigs = vec![
+            sig("a.rs", "hello"),
+            sig("b.rs", "other"),
+            sig("c.rs", "third"),
+        ];
+        let refs = vec![reference("b.rs", "hello"), reference("c.rs", "hello")];
+        let result = resolve_refs(Path::new("a.rs"), &sigs, &refs);
+        assert_eq!(result.used_by.len(), 2);
+    }
 }
