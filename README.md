@@ -23,7 +23,7 @@ cargo install --path .
 Or build from source:
 
 ```bash
-git clone https://github.com/aspect-build/sigdiff.git
+git clone https://github.com/awakenworks/sigdiff.git
 cd sigdiff
 cargo build --release
 # Binary is at target/release/sigdiff
